@@ -1,5 +1,7 @@
 // Payloads stuff
 mod payload;
+use std::path::PathBuf;
+
 use payload::OpenFileDialog;
 
 // Tauri stuff
@@ -12,15 +14,14 @@ pub fn open_file_dialog(window: Window) {
         .pick_files(move |path_buf| {
             // Emit that files have been picked and need to be added to queue
             if let Some(p) = path_buf {
-                window
-                    .emit("open-files", OpenFileDialog { paths: p })
-                    .expect("Error opening files");
+                window.emit("open-files", p).expect("Error opening files");
             }
         });
 }
 
 #[tauri::command]
 pub fn open_folder_dialog(window: Window) {
+    let paths: Vec<PathBuf> = vec![];
     FileDialogBuilder::default()
         .add_filter("Audio Files", &["mp3", "wav", "ogg"])
         .pick_folders(move |path_buf| {
