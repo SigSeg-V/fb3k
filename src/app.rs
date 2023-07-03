@@ -5,7 +5,6 @@ use leptos::{ev::MouseEvent, leptos_dom::ev::SubmitEvent};
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
-use tauri_sys::event;
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,8 +22,10 @@ struct Playlist {
     paths: Vec<PathBuf>,
 }
 
-async fn listen_open_files_event() -> Vec<PathBuf> {
-    let ev = event::once::<Vec<PathBuf>>("open-files").await.unwrap();
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct Track {
+    id: usize,
+    path: RwSignal<String>
 }
 
 #[component]
@@ -32,10 +33,7 @@ pub fn App(cx: Scope) -> impl IntoView {
     let (name, set_name) = create_signal(cx, String::new());
     let (greet_msg, set_greet_msg) = create_signal(cx, String::new());
 
-    
-    let (playlist, set_playlist) = create_signal::<Vec<PathBuf>>(cx, vec![]);
-    let playlist_resource = create_local_resource(cx, move ||(), listen_open_files_event());
-
+    let (playlist, set_playlist) = create_signal::<Vec<Track>>(cx, vec![]);
 
     let update_name = move |ev: SubmitEvent| {
         let v = event_target_value(&ev);
@@ -58,16 +56,26 @@ pub fn App(cx: Scope) -> impl IntoView {
 
     let open_files = move |ev: MouseEvent| {
         spawn_local(async move {
-            let mut new_playlist: Vec<PathBuf> = playlist.get();
-            let mut paths_to_add: Playlist =
-                match from_value<Playlist>(invoke("open_file_dialog", JsValue::NULL).await) {
-                    Ok(pl) => pl,
+            let mut new_playlist: Vec<Track> = playlist.get();
+            let mut paths_to_add: Vec<Track> =
+                match from_value::<Playlist>(invoke("open_file_dialog", JsValue::NULL).await) {
+                    Ok(pl) => {
+                        pl.paths
+                            .iter()
+                            .enumerate()
+                            .map(|(pos, it)| {
+                                Track{
+                                    id: playlist.get().len()+pos,
+                                    path: create_rw_signal(cx, it.to_str().unwrap().to_string())
+                                }
+                            }).collect::<Vec<Track>>()
+                    },
                     Err(_) => {
                         log!("error opening file dialog");
-                        Playlist { paths: Vec::new() }
+                        Vec::new()
                     }
                 };
-            new_playlist.append(&mut paths_to_add.paths);
+            new_playlist.append(&mut paths_to_add);
             set_playlist.set(new_playlist)
         })
     };
@@ -84,11 +92,11 @@ pub fn App(cx: Scope) -> impl IntoView {
 
             <For
                 each=playlist
-                key=|pl| pl
-                view=move |cx, path: PathBuf|{
+                key=|pl| pl.id
+                view=move |cx, track: Track|{
                     view! {
                         cx,
-                        <p>"path:" {move || path.to_str()}</p>
+                        <p>"path:" {move || track.path.get()}</p>
                     }
                 }
             />
