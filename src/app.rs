@@ -1,4 +1,6 @@
+use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use leptos::*;
 use leptos::{ev::MouseEvent, leptos_dom::ev::SubmitEvent};
@@ -25,7 +27,7 @@ struct Playlist {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 struct Track {
     id: usize,
-    path: RwSignal<String>
+    path: RwSignal<Arc<str>>
 }
 
 #[component]
@@ -66,7 +68,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                             .map(|(pos, it)| {
                                 Track{
                                     id: playlist.get().len()+pos,
-                                    path: create_rw_signal(cx, it.to_str().unwrap().to_string())
+                                    path: create_rw_signal(cx, Arc::from(it.to_str().unwrap()))
                                 }
                             }).collect::<Vec<Track>>()
                     },
@@ -96,7 +98,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                 view=move |cx, track: Track|{
                     view! {
                         cx,
-                        <p>"path:" {move || track.path.get()}</p>
+                        <p>"path:" {move || String::from(track.path.get().deref())}</p>
                     }
                 }
             />
