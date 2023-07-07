@@ -1,23 +1,24 @@
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 
+use js_sys::Math::log;
 use leptos::*;
 use leptos::{ev::MouseEvent, leptos_dom::ev::SubmitEvent};
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "tauri"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
-}
+use tauri_sys::{tauri, event};
 
 #[derive(Serialize, Deserialize)]
 struct GreetArgs<'a> {
     name: &'a str,
 }
+
+#[derive(Serialize, Deserialize)]
+struct EmptyArgs;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Playlist {
@@ -49,35 +50,43 @@ pub fn App(cx: Scope) -> impl IntoView {
                 return;
             }
 
-            let args = to_value(&GreetArgs { name: &name.get() }).unwrap();
             // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-            let new_msg = invoke("greet", args).await.as_string().unwrap();
+            let new_msg = tauri::invoke("greet", &GreetArgs { name: &name.get() }).await.unwrap();
             set_greet_msg.set(new_msg);
         });
     };
 
     let open_files = move |ev: MouseEvent| {
         spawn_local(async move {
-            let mut new_playlist: Vec<Track> = playlist.get();
+            match tauri::invoke::<(), ()>("open_file_dialog", &()).await {
+                Ok(_) => log!("Open file diaglog success"),
+                Err(_) => log!("Failed to open dialog"),
+            };
+            
             let mut paths_to_add: Vec<Track> =
-                match from_value::<Playlist>(invoke("open_file_dialog", JsValue::NULL).await) {
-                    Ok(pl) => {
-                        pl.paths
-                            .iter()
-                            .enumerate()
-                            .map(|(pos, it)| {
-                                Track{
-                                    id: playlist.get().len()+pos,
-                                    path: create_rw_signal(cx, Arc::from(it.to_str().unwrap()))
-                                }
-                            }).collect::<Vec<Track>>()
-                    },
-                    Err(_) => {
-                        log!("error opening file dialog");
-                        Vec::new()
-                    }
-                };
+            match event::once::<Playlist>("open-files").await {
+                Ok(ev) => {
+                    ev.payload.paths
+                    .iter()
+                    .enumerate()
+                    .map(|(pos, it)| {
+                        Track{
+                            id: playlist.get().len() + pos,
+                            path: create_rw_signal(cx, Arc::from(match it.to_str(){
+                                Some(string) => string,
+                                None => {log!("failed to convert to string"); ""},
+                            }))
+                        }
+                    }).collect::<Vec<Track>>()
+                },
+                Err(_) => {
+                    log!("error opening file dialog");
+                    Vec::new()
+                }
+            };
+            let mut new_playlist: Vec<Track> = playlist.get();
             new_playlist.append(&mut paths_to_add);
+            log!("new len: {}", new_playlist.len());
             set_playlist.set(new_playlist)
         })
     };
